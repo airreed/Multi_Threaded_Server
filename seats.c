@@ -44,13 +44,22 @@ int view_seat(char* buf, int bufsize,  int seat_id, int customer_id, int custome
                 snprintf(buf, bufsize, "Confirm seat: %d %c ?\n\n",curr->id, seat_state_to_char(curr->state));
                 curr->state = PENDING;
                 curr->customer_id = customer_id;
+               	pthread_mutex_lock(&seat_flag_lock);
+               	seat_available -= 1;
+               	pthread_mutex_unlock(&seat_flag_lock);
 
             }
             else if(curr->state == PENDING && curr->customer_id != customer_id){
             	//TODO: add the task to standby list //todo not right
             	//check if the seats are all pending and occupied. if yes, add to standbylist
             	// if not, return to customer infomation
-            	res = 1;
+              	pthread_mutex_lock(&seat_flag_lock);
+              	if(seat_available == 0){
+              		res = 1;
+              	}else{
+              		snprintf(buf,bufsize,"The Seat is held by other user.\n");
+              	}
+               	pthread_mutex_unlock(&seat_flag_lock);
 
             }
             else 
@@ -81,6 +90,10 @@ void confirm_seat(char* buf, int bufsize, int seat_id, int customer_id, int cust
                 snprintf(buf, bufsize, "Seat confirmed: %d %c\n\n",
                         curr->id, seat_state_to_char(curr->state));
                 curr->state = OCCUPIED;
+               	pthread_mutex_lock(&seat_flag_lock);
+               	seat_available -= 1;
+               	pthread_mutex_unlock(&seat_flag_lock);
+
             }
             else if(curr->customer_id != customer_id )
             {
@@ -116,9 +129,11 @@ void cancel(char* buf, int bufsize, int seat_id, int customer_id, int customer_p
                         curr->id, seat_state_to_char(curr->state));
                 curr->state = AVAILABLE;
                 curr->customer_id = -1;
-
-
-
+                //TODO: check the the standbylist, if empty,set it available. If not, give the seat to the the first person in the list.
+                if(g_thread_pool->standbylist->data_start ){}
+               	pthread_mutex_lock(&seat_flag_lock);
+               	seat_available += 1;
+               	pthread_mutex_unlock(&seat_flag_lock);
             }
             else if(curr->customer_id != customer_id )
             {
@@ -140,6 +155,11 @@ void cancel(char* buf, int bufsize, int seat_id, int customer_id, int customer_p
 
 void load_seats(int number_of_seats)
 {
+
+	pthread_mutex_lock(&seat_flag_lock);
+	seat_available = number_of_seats;
+	pthread_mutex_unlock(&seat_flag_lock);	
+
     seat_t* curr = NULL;
     int i;
     for(i = 0; i < number_of_seats; i++)

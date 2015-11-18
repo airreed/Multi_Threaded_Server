@@ -64,8 +64,12 @@ int standbylist_add_task(pool_t *pool, void (*function)(void *), void* argument)
 		notify = 1;
 	}
 	int err = 0;
-	pool->standbylist.data_end-> function = function;
-	pool->standbylist.data_end-> argument = argument;
+	if(isFull(pool->standbylist)){
+		return err;
+	}else{
+		pool->standbylist.data_end-> function = function;
+		pool->standbylist.data_end-> argument = argument;
+	}
 	c_queue* temp = &pool->queue;
 	err = addToQueue(temp);
 	return err;
@@ -137,56 +141,55 @@ static void *thread_do_work(void *vpool)
 	pool_task_t temp;
     while(1) {
 
-		//check standby list
-    	sem_wait(&pool->sema);
-    	// if the standbylist is not empty
-    	if(pool->standbylist.data_start!=pool->standbylist.data_end){
-	    	// executing the task in from standby list
-    		temp = *(pool->standbylist.data_start);
-    		delFromQueue(&pool->standbylist);
-    		sem_post(&pool->sema);
-    	}else{
-    		sem_post(&pool->sema);
-    		//standbylist is empty, execute task in queue.
-			pthread_mutex_lock(&pool->lock);
-			//check pool->queue
-			if(pool->queue.data_start!=pool->queue.data_end){
-				temp = *(pool->queue.data_start);
-			}else{
-				//wait for condition reach signal to continue
-				printf("waiting for signal\n");
-				while(pool->available!=0){
-					pthread_cond_wait(&pool->notify, &pool->lock);
-				}
-				printf("signal received !\n");			
-				pthread_mutex_unlock(&pool->lock);
-				continue;
-			}
+	//check standby list
+		//standbylist is empty, execute task in queue.
+		pthread_mutex_lock(&pool->lock);
+		//check pool->queue
+		if(!isEmpty(pool->queue)){
+			temp = *(pool->queue.data_start);
 			delFromQueue(&pool->queue);
-			if(pool->queue.data_start!=pool->queue.data_end){
-				pool->available = 0;
+		}else{
+			//wait for condition reach signal to continue
+			printf("waiting for signal\n");
+			while(pool->available==0){
+				pthread_cond_wait(&pool->notify, &pool->lock);
 			}
-			pthread_mutex_unlock(&pool->lock);    		
-    	}
+			printf("signal received !\n");			
+			pthread_mutex_unlock(&pool->lock);
+			continue;
+		}
+		if(isEmpty(pool->queue)){
+			pool->available = 0;
+		}
+		pthread_mutex_unlock(&pool->lock);    		
+    	
 		printf("executing the function\n");
 	    (*(temp.function))((argu*)temp.argument);
     }
     pthread_exit(NULL);
     return(NULL);
 }
+int isEmpty(c_queue *queue){
+	if(queue->data_end == queue->buf_end){
+		return 1;
+	}
+}
+int isFull(c_queue *queue){
+	if(queue->data_end + 1 == queue->data_start){
+		return 1;
+	}
+	if(queue->data_end == queue->buf_start && queue->data_start == queue->buf_end){
+		return 1;
+	}
+	if(queue->data_end == queue->buf_end && queue->data_start == queue->buf_start){
+		return 1;
+	}
+
+}
 int addToQueue(c_queue *queue){
 	int err = 0;
-	if(queue->data_end + 1 == queue->data_start){
-		printf("The queue has bee fully ocupied\n");
-		err = 1;
-		return err;
-	}
+	//move pointer
 	if(queue->data_end == queue->buf_end){
-		if(queue->data_start == queue->buf_start){
-			printf("The queue has bee fully ocupied\n");
-			err = 1;
-			return err;
-		}
 		queue->data_end = queue->buf_start;
 	}else{
 		queue->data_end = queue->data_end + 1;

@@ -8,6 +8,9 @@ typedef enum
     OCCUPIED
 } seat_state_t;
 
+int seat_available;
+pthread_mutex_t seat_flag_lock;
+
 typedef struct seat_struct
 {
     int id;
@@ -15,6 +18,7 @@ typedef struct seat_struct
     seat_state_t state;
     struct seat_struct* next;
     pthread_mutex_t seat_lock;
+
 } seat_t;
 
 void load_seats(int);

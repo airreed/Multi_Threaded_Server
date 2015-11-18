@@ -23,6 +23,9 @@ int listenfd;
 
 struct pool_t* g_thread_pool;
 
+int seat_available;
+pthread_mutex_t seat_flag_lock;
+
 int main(int argc,char *argv[])
 {
     int flag, num_seats = 20;
@@ -109,6 +112,7 @@ int main(int argc,char *argv[])
 
         argu* temp= (argu*)malloc(sizeof(argu));//struct     {connfd,&req};
         temp->connfd = connfd;
+        temp->customer_priority = 1;
 //        temp->req = req;
         pool_add_task(g_thread_pool, (void*)&parse_request, (void*)temp);
 //        close(connfd);   move to util.c/process_request

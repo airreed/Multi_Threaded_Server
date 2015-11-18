@@ -3,7 +3,10 @@
 
 typedef struct pool_t pool_t;
 
-
+typedef struct standbylist_element{
+  int userid;
+  int priority;
+}standby_element;
 
 typedef struct pool{
     void (*function)(void *);
@@ -16,6 +19,13 @@ typedef struct circular_array{
 	pool_task_t* data_start;
 	pool_task_t* data_end;
 } c_queue;
+
+typedef struct standby_circular_array{
+  standby_element* buf_start;
+  standby_element* buf_end;
+  standby_element* data_start;
+  standby_element* data_end;
+} stand_queue;
 
 struct pool_t {
   pthread_mutex_t lock;

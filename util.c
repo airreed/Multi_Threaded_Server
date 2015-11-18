@@ -14,6 +14,7 @@
 #include "thread_pool.h"
 #include "util.h"
 #include "seats.h"
+
 extern struct pool_t* g_thread_pool;
 extern int pool_add_task(pool_t *pool, void (*function)(void *), void* argument);
 
@@ -112,8 +113,9 @@ void parse_request(argu* arguments)
     req->customer_priority = parse_int_arg(file, "priority=");
 
 //    argu* temp= (argu*)malloc(sizeof(argu));//struct     {connfd,&req};
- //   temp->connfd = connfd;
-//    temp->req = *req;
+    arguments->connfd = connfd;
+    arguments->req = *req;
+    arguments->customer_priority = req->customer_priority;
     pool_add_task(g_thread_pool, (void*)&process_request, (void*)arguments);
 }
 
