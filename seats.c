@@ -2,9 +2,19 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <pthread.h>
 #include "seats.h"
-extern struct pool_t* g_thread_pool;
+#include "thread_pool.h"
+//#include "semaphore.c"
+#include "util.h"
 
+
+extern struct pool_t* g_thread_pool;
+extern int sem_wait(m_sem_t *s);
+extern int sem_post(m_sem_t *s);
+extern struct pool_t* g_thread_pool;
+extern int delFromQueue(c_queue *queue);
+extern int addToQueue(c_queue *queue);
 seat_t* seat_header = NULL;
 
 char seat_state_to_char(seat_state_t);
@@ -33,6 +43,7 @@ void list_seats(char* buf, int bufsize)
 
 int view_seat(char* buf, int bufsize,  int seat_id, int customer_id, int customer_priority)
 {
+	int res = 0;
     seat_t* curr = seat_header;
     while(curr != NULL)
     {
@@ -42,12 +53,13 @@ int view_seat(char* buf, int bufsize,  int seat_id, int customer_id, int custome
             if(curr->state == AVAILABLE || (curr->state == PENDING && curr->customer_id == customer_id))
             {
                 snprintf(buf, bufsize, "Confirm seat: %d %c ?\n\n",curr->id, seat_state_to_char(curr->state));
+ //.               printf("SET table :%d to customer:%d \n",curr->id,customer_id);
                 curr->state = PENDING;
                 curr->customer_id = customer_id;
                	pthread_mutex_lock(&seat_flag_lock);
                	seat_available -= 1;
+ //.              	printf("Seat available: %d", seat_available);
                	pthread_mutex_unlock(&seat_flag_lock);
-
             }
             else if(curr->state == PENDING && curr->customer_id != customer_id){
             	//TODO: add the task to standby list //todo not right
@@ -55,12 +67,13 @@ int view_seat(char* buf, int bufsize,  int seat_id, int customer_id, int custome
             	// if not, return to customer infomation
               	pthread_mutex_lock(&seat_flag_lock);
               	if(seat_available == 0){
+              		snprintf(buf,bufsize,"Seat unavailable\n\n");
+   //.           		printf("add to standbylist!!!!!!!\n");
               		res = 1;
               	}else{
-              		snprintf(buf,bufsize,"The Seat is held by other user.\n");
+              		snprintf(buf,bufsize,"Seat unavailable\n\n");
               	}
                	pthread_mutex_unlock(&seat_flag_lock);
-
             }
             else 
             {
@@ -79,7 +92,6 @@ int view_seat(char* buf, int bufsize,  int seat_id, int customer_id, int custome
 void confirm_seat(char* buf, int bufsize, int seat_id, int customer_id, int customer_priority)
 {
     seat_t* curr = seat_header;
-    int res = 0;
     while(curr != NULL)
     {
         if(curr->id == seat_id)
@@ -90,10 +102,6 @@ void confirm_seat(char* buf, int bufsize, int seat_id, int customer_id, int cust
                 snprintf(buf, bufsize, "Seat confirmed: %d %c\n\n",
                         curr->id, seat_state_to_char(curr->state));
                 curr->state = OCCUPIED;
-               	pthread_mutex_lock(&seat_flag_lock);
-               	seat_available -= 1;
-               	pthread_mutex_unlock(&seat_flag_lock);
-
             }
             else if(curr->customer_id != customer_id )
             {
@@ -127,10 +135,20 @@ void cancel(char* buf, int bufsize, int seat_id, int customer_id, int customer_p
             {
                 snprintf(buf, bufsize, "Seat request cancelled: %d %c\n\n",
                         curr->id, seat_state_to_char(curr->state));
-                curr->state = AVAILABLE;
-                curr->customer_id = -1;
-                //TODO: check the the standbylist, if empty,set it available. If not, give the seat to the the first person in the list.
-                if(g_thread_pool->standbylist->data_start ){}
+   //.             printf("seat cancelled.\n");
+                //TODO: check the the standbylist, if empty,set the seat is available. If not, give the seat to the the first person in the list.
+               	sem_wait(&g_thread_pool->sema);
+    //.           	printf("----standbylist: data_start :%p  data_end:%p\n",g_thread_pool->standbylist.data_start,g_thread_pool->standbylist.data_end);
+                if(!isEmpty(&g_thread_pool->standbylist)){
+					argu* temp = g_thread_pool->standbylist.data_start->argument;
+   	//.                printf("[cancelled] SET table :%d from %d to customer:%d \n",curr->id,curr->customer_id,temp->req.user_id);
+                	curr->customer_id = temp->req.user_id;
+                	delFromQueue(&g_thread_pool->standbylist);
+                }else{
+   	                curr->state = AVAILABLE;
+	                curr->customer_id = -1;
+                }
+                sem_post(&g_thread_pool->sema);
                	pthread_mutex_lock(&seat_flag_lock);
                	seat_available += 1;
                	pthread_mutex_unlock(&seat_flag_lock);

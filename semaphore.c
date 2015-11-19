@@ -1,22 +1,18 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
+#include "thread_pool.h"
+#include <stdio.h>
 
 
-typedef struct m_sem_t {
-    int value;
-    pthread_mutex_t guard;
-    pthread_cond_t cond;
-} m_sem_t;
-
-int sem_init(m_sem_t *s);
+void sem_init(m_sem_t *s);
 
 int sem_wait(m_sem_t *s);
 
 int sem_post(m_sem_t *s);
+void sem_destroy(m_sem_t *s);
 
-
-int sem_init(m_sem_t *s)
+void sem_init(m_sem_t *s)
 {
 	pthread_mutex_init(&s->guard,NULL);
 	pthread_cond_init(&s->cond,NULL);
@@ -28,7 +24,7 @@ int sem_wait(m_sem_t *s)
     //TODO
     pthread_mutex_lock(&s->guard);
     while(s->value == 0){
-	    pthread_cond_wait(&s->guard,&s->cond);
+	    pthread_cond_wait(&s->cond,&s->guard);
     }
     s->value = s->value - 1;
     pthread_mutex_unlock(&s->guard);

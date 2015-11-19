@@ -10,14 +10,17 @@
 #include <unistd.h>
 #include <stdbool.h>
 #include <errno.h>
+#include <pthread.h>
 
 #include "thread_pool.h"
 #include "util.h"
 #include "seats.h"
-
+//#include "semaphore.c"
 extern struct pool_t* g_thread_pool;
 extern int pool_add_task(pool_t *pool, void (*function)(void *), void* argument);
-
+extern int standbylist_add_task(pool_t *pool, void (*function)(void *), void* argument);
+extern int sem_wait(m_sem_t *s);
+extern int sem_post(m_sem_t *s);
 #define BUFSIZE 1024
 
 int writenbytes(int,char *,int);
@@ -152,41 +155,38 @@ void process_request(argu* arguments)
     else if(strncmp(req->resource, "view_seat", length) == 0)
     {
         addtoStandby = view_seat(buf, BUFSIZE, req->seat_id, req->user_id, req->customer_priority);
+        writenbytes(connfd, ok_response, strlen(ok_response));
+        // send data
+        writenbytes(connfd, buf, strlen(buf));                          
+
         if (addtoStandby ==1){
         	// add to standby list
-        	sem_wait(&g_thread_pool->sema);
-        		//TODO:
-    	    argu* temp= (argu*)malloc(sizeof(argu));
-	        temp->connfd = connfd;
-	        temp->req = *req;
-        	standbylist_add_task(g_thread_pool,(void*)&process_request, void* temp);
+            if(isFull(&g_thread_pool->standbylist)){
+                close(connfd);
+                free(req->resource);
+                free(arguments);
+            }
 
-           	sem_post(&g_thread_pool->sema);
-        }else{
-	        writenbytes(connfd, ok_response, strlen(ok_response));
-	        // send data
-	        writenbytes(connfd, buf, strlen(buf));        	
-        }
+
+    	    argu* temp= (argu*)malloc(sizeof(argu));
+
+	        temp->connfd = connfd;
+
+	        temp->req = *req;
+ //.           printf("============before add to standbylist\n");
+        	standbylist_add_task(g_thread_pool,(void*)&process_request, (void*) temp);
+ //.           printf("standbylist: data_start:%p  data_end: %p\n",g_thread_pool->standbylist.data_start,g_thread_pool->standbylist.data_end);
+ //.           printf("============after add to standbylist\n");
+         }
         // send headers
     } 
     else if(strncmp(req->resource, "confirm", length) == 0)
     {
-        addtoStandby = confirm_seat(buf, BUFSIZE, req->seat_id, req->user_id, req->customer_priority);
-        if (addtoStandby ==1){
-        	// add to standby list
-        	sem_wait(&g_thread_pool->sema);
-        		//TODO:
-    	    argu* temp= (argu*)malloc(sizeof(argu));
-	        temp->connfd = connfd;
-	        temp->req = *req;        	
-        	standbylist_add_task(g_thread_pool,(void*)&process_request, void* temp);
-           	sem_post(&g_thread_pool->sema);
-        }else{
-	        // send headers
-	        writenbytes(connfd, ok_response, strlen(ok_response));
-	        // send data
-	        writenbytes(connfd, buf, strlen(buf));
-     	}
+        confirm_seat(buf, BUFSIZE, req->seat_id, req->user_id, req->customer_priority);
+        // send headers
+        writenbytes(connfd, ok_response, strlen(ok_response));
+        // send data
+        writenbytes(connfd, buf, strlen(buf));
     }
     else if(strncmp(req->resource, "cancel", length) == 0)
     {

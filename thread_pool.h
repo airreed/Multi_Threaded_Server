@@ -3,10 +3,6 @@
 
 typedef struct pool_t pool_t;
 
-typedef struct standbylist_element{
-  int userid;
-  int priority;
-}standby_element;
 
 typedef struct pool{
     void (*function)(void *);
@@ -20,12 +16,11 @@ typedef struct circular_array{
 	pool_task_t* data_end;
 } c_queue;
 
-typedef struct standby_circular_array{
-  standby_element* buf_start;
-  standby_element* buf_end;
-  standby_element* data_start;
-  standby_element* data_end;
-} stand_queue;
+typedef struct m_sem_t {
+    int value;
+    pthread_mutex_t guard;
+    pthread_cond_t cond;
+} m_sem_t;
 
 struct pool_t {
   pthread_mutex_t lock;
@@ -47,5 +42,6 @@ int pool_destroy(pool_t *pool);
 int addToQueue(c_queue *queue);
 int delFromQueue(c_queue *queue);
 void initQueue(c_queue* queue,int queue_size);
-
+int isEmpty(c_queue *queue);
+int isFull(c_queue *queue);
 #endif
