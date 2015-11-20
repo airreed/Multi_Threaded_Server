@@ -137,12 +137,13 @@ void process_request(argu* arguments)
                             "</body></html>\n";
     int fd;
     char buf[BUFSIZE+1];
-    int length = strlen(req->resource);
-    int addtoStandby=0;
     if (req->resource == NULL){
-    	free(arguments);
+        free(arguments);
         return;
     }
+    int length = strlen(req->resource);
+    int addtoStandby=0;
+
     // Check if the request is for one of our operations
     if (strncmp(req->resource, "list_seats", length) == 0)
     {  

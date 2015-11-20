@@ -10,7 +10,7 @@
 #include <unistd.h>
 #include <stdbool.h>
 #include <errno.h>
-
+#include <pthread.h>
 #include "thread_pool.h"
 #include "seats.h"
 #include "util.h"
@@ -18,16 +18,15 @@
 #define BUFSIZE 1024
 #define FILENAMESIZE 100
 void shutdown_server(int);
-
+extern void* checkPending(void* num_of_seats);
 int listenfd;
-
+int num_seats = 20;
 struct pool_t* g_thread_pool;
-
 
 
 int main(int argc,char *argv[])
 {
-    int flag, num_seats = 20;
+    int flag = 20;
     int connfd = 0;
     struct sockaddr_in serv_addr;
 
@@ -62,7 +61,10 @@ int main(int argc,char *argv[])
 
     // Load the seats;
     load_seats(num_seats);
-
+    // todo:create the check thread
+    
+    pthread_t timeCheckthread;
+ 	pthread_create(&timeCheckthread,NULL,checkPending,(void*)((long*)&num_seats));
     // set server address 
     memset(&serv_addr, '0', sizeof(serv_addr));
     memset(send_buffer, '0', sizeof(send_buffer));
@@ -80,7 +82,7 @@ int main(int argc,char *argv[])
     // listen for incoming requests
     listen(listenfd, 10);
 
-    // TODO: Initialize your threadpool!
+    // Initialize your threadpool!
     g_thread_pool = pool_create(BUFSIZE,20);
     // This while loop "forever", handling incoming connections
     while(1)
@@ -101,32 +103,22 @@ int main(int argc,char *argv[])
             The lines below will need to be modified! Some may need to be moved
             to other locations when you make your server multithreaded.
         *********************************************************************/
-        //TODO: Don't need the struct
-//        struct request req;
-        // parse_reqarguuest fills in the req struct object
-
-//        parse_request(connfd, &req);
-        // process_request reads the req struct and processes the command
-//        process_request(connfd, &req);
-
         argu* temp= (argu*)malloc(sizeof(argu));//struct     {connfd,&req};
         temp->connfd = connfd;
         temp->customer_priority = 1;
-//        temp->req = req;
-        printf("------------------------------------------------\n");
         pool_add_task(g_thread_pool, (void*)&parse_request, (void*)temp);
-//        close(connfd);   move to util.c/process_request
     }
 }
 
 void shutdown_server(int signo){
     printf("Shutting down the server...\n");
     
-    // TODO: Teardown your threadpool
+    //  Teardown your threadpool
     int err = pool_destroy(g_thread_pool);
     if (!err){
     	printf("Error !!! in pool destroy\n");
     }
+
     // TODO: Print stats about your ability to handle requests.
     unload_seats();
     close(listenfd);

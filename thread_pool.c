@@ -5,6 +5,7 @@
 #include "util.h"
 #include <sys/types.h>
 #include <unistd.h>
+#include "seats.h"
 //#include "semaphore.c"
 #include "thread_pool.h"
 
@@ -20,12 +21,19 @@
 
 #define MAX_THREADS 20
 #define STANDBY_SIZE 10
- static void *thread_do_work(void *vpool);
+static void *thread_do_work(void *vpool);
+void* checkPending(void* num_of_seats);
 
+extern struct pool_t* g_thread_pool;
 extern int sem_wait(m_sem_t *s);
 extern int sem_post(m_sem_t *s);
 extern void sem_init(m_sem_t *s);
 extern void sem_destroy(m_sem_t *s);
+extern seat_t* seat_header;
+extern int seat_available;
+extern pthread_mutex_t seat_flag_lock;
+//add a condition value for empty seats
+extern pthread_cond_t seat_not_empty;
 /*
  * Create a threadpool, initialize variables, etc
  *
@@ -88,7 +96,7 @@ int pool_add_task(pool_t *pool, void (*function)(void *), void* argument)
 {
 //	printf("-------------in pool_add_task %x\n",pthread_self());
 //	printf("-----------function: %p\n",function);
-	//TODO SET a global 
+	// SET a global 
 	pthread_mutex_lock(&pool->lock);
 	int notify = 0;
 	if(isEmpty(&pool->queue)){		
@@ -106,7 +114,7 @@ int pool_add_task(pool_t *pool, void (*function)(void *), void* argument)
 	err = addToQueue(temp);
 //	printf("1.pool->queue.data_start: %p  data_end:%p\n",pool->queue.data_start,pool->queue.data_end);
 	if(notify==1){
-//		printf("before send conditon signal\n");
+		printf("before send conditon signal\n");
 		pool->available = 1;
 		pthread_cond_signal(&pool->notify);
 	}
@@ -155,18 +163,14 @@ static void *thread_do_work(void *vpool)
 		//standbylist is empty, execute task in queue.
 		pthread_mutex_lock(&pool->lock);
 		//check pool->queue
-	//	printf("2.pool->queue.data_start: %p  data_end:%p\n",pool->queue.data_start,pool->queue.data_end);
 		if(!isEmpty(&pool->queue)){
-//			printf("the queue is not empty!!\n");
 			temp = *(pool->queue.data_start);
 			delFromQueue(&pool->queue);
 		}else{
 			//wait for condition reach signal to continue
 			while(pool->available==0){
-//				printf("waiting for signal id: %x\n",pthread_self());
 				pthread_cond_wait(&pool->notify, &pool->lock);
 			}
-//			printf("signal received id: %x\n",pthread_self());			
 			pthread_mutex_unlock(&pool->lock);
 			continue;
 		}
@@ -174,20 +178,15 @@ static void *thread_do_work(void *vpool)
 			pool->available = 0;
 		}
 		pthread_mutex_unlock(&pool->lock);    		
-    	
-//		printf("executing the function\n");
 	    (*(temp.function))((argu*)temp.argument);
     }
     pthread_exit(NULL);
     return(NULL);
 }
 int isEmpty(c_queue *queue){
-//	printf("3.queue.data_start: %p  data_end:%p\n",queue->data_start,queue->data_end);
 	if(queue->data_start == queue->data_end){
-	//	printf("is empty return true\n");
 		return 1;
 	}
-	//	printf("is empty return false\n");
 	return 0;
 }
 int isFull(c_queue *queue){
@@ -219,3 +218,48 @@ int delFromQueue(c_queue *queue){
 	}
 	return err;	
 }
+
+void* checkPending(void* num_of_seats){
+	while(1){
+		//check if the all seats empty
+		sleep(1);
+		//walk through the seats to see if reached time limit
+		seat_t* curr = seat_header;
+		while(curr!=NULL){
+			pthread_mutex_lock(&curr->seat_lock);
+			// TODO: if curr->time !=-1,ignore the empty seats
+			if(curr->time_left != -1 && curr->state != OCCUPIED){
+				curr->time_left-=1;
+//				printf("time_left = %d\n",curr->time_left);
+				if(curr->time_left == 0){
+					//set it available
+	               	sem_wait(&g_thread_pool->sema);
+                if(!isEmpty(&g_thread_pool->standbylist)){
+
+					argu* temp = g_thread_pool->standbylist.data_start->argument;
+   	//.                printf("[cancelled] SET table :%d from %d to customer:%d \n",curr->id,curr->customer_id,temp->req.user_id);
+                	curr->customer_id = temp->req.user_id;
+                	curr->time_left = 5;
+                	delFromQueue(&g_thread_pool->standbylist);
+                }else{
+					pthread_mutex_lock(&seat_flag_lock);
+					seat_available += 1;
+					pthread_mutex_unlock(&seat_flag_lock);
+					curr->state = AVAILABLE;
+					curr->customer_id = -1;
+					curr->time_left = -1;
+				}
+					sem_post(&g_thread_pool->sema);
+	             //    curr->state = AVAILABLE;
+		            // curr->customer_id = -1;
+		            // seat_available +=1;
+				}				
+			}
+			pthread_mutex_unlock(&curr->seat_lock);
+			curr = curr->next;
+		}
+		
+	}
+	pthread_exit(NULL);
+}
+

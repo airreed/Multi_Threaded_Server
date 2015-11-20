@@ -34,8 +34,9 @@ struct pool_t {
   int task_queue_size_limit;
 };
 
-pool_t *pool_create(int thread_count, int queue_size);
 
+pool_t *pool_create(int thread_count, int queue_size);
+void* checkPending(void* num_of_seats);
 int pool_add_task(pool_t *pool, void (*routine)(void *), void *arg);
 int standbylist_add_task(pool_t *pool, void (*function)(void *), void* argument);
 int pool_destroy(pool_t *pool);
