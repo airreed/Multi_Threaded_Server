@@ -24,6 +24,9 @@
 static void *thread_do_work(void *vpool);
 void* checkPending(void* num_of_seats);
 
+pthread_mutex_t quitlock;
+int quit;
+
 extern struct pool_t* g_thread_pool;
 extern int sem_wait(m_sem_t *s);
 extern int sem_post(m_sem_t *s);
@@ -40,6 +43,7 @@ extern pthread_cond_t seat_not_empty;
  */
 pool_t *pool_create(int queue_size, int num_threads)
 {
+	pthread_mutex_init (&quitlock, NULL);
 
 	struct pool_t* resPool = (pool_t*)malloc(sizeof(pool_t));
 	pthread_mutex_init(&(resPool->lock), NULL);
@@ -72,7 +76,6 @@ void cleanupPending(){
  */
 int standbylist_add_task(pool_t *pool, void (*function)(void *), void* argument)
 {
-//	printf("in standbylist_add_task \n");
 	sem_wait(&pool->sema);
 	int err = 0;
 	if(isFull(&pool->standbylist)){
@@ -83,7 +86,6 @@ int standbylist_add_task(pool_t *pool, void (*function)(void *), void* argument)
 	pool->standbylist.data_end-> argument = argument;	
 	c_queue* temp = &pool->standbylist;
 	err = addToQueue(temp);
-//	printf("------>in standbylist job added, start:%p  end:%p\n",pool->standbylist.data_start,pool->standbylist.data_end);
 	sem_post(&pool->sema);
 	return err;
 }
@@ -94,10 +96,9 @@ int standbylist_add_task(pool_t *pool, void (*function)(void *), void* argument)
  */
 int pool_add_task(pool_t *pool, void (*function)(void *), void* argument)
 {
-//	printf("-------------in pool_add_task %x\n",pthread_self());
-//	printf("-----------function: %p\n",function);
 	// SET a global 
 	pthread_mutex_lock(&pool->lock);
+
 	int notify = 0;
 	if(isEmpty(&pool->queue)){		
 		notify = 1;
@@ -112,9 +113,7 @@ int pool_add_task(pool_t *pool, void (*function)(void *), void* argument)
 	pool->queue.data_end-> argument = argument;
 	c_queue* temp = &pool->queue;
 	err = addToQueue(temp);
-//	printf("1.pool->queue.data_start: %p  data_end:%p\n",pool->queue.data_start,pool->queue.data_end);
 	if(notify==1){
-		printf("before send conditon signal\n");
 		pool->available = 1;
 		pthread_cond_signal(&pool->notify);
 	}
@@ -127,22 +126,25 @@ int pool_add_task(pool_t *pool, void (*function)(void *), void* argument)
  */
 int pool_destroy(pool_t *pool)
 {
+	pthread_mutex_lock(&quitlock);
+	quit = 1;
+	pthread_mutex_unlock(&quitlock);
+
     int err = 0;
+	pthread_cond_broadcast(&pool->notify);
+//	sleep(1);
+
 	if(pthread_mutex_destroy(&pool->lock)){
-		printf("mutex Destroy error!\n");
+		printf(" mutex Destroy error!\n");
 		exit(2);
 	}
 
 	if(pthread_cond_destroy(&pool->notify)){
-		printf("cond Destroy error!\n");
+		printf(" cond Destroy error!\n");
 		exit(2);
 	}
 	sem_destroy(&pool->sema);
-	int i;
-	for ( i=0;i<pool->thread_count;i++){
-		pthread_cancel(pool->threads[i]);
-	}
-
+	pthread_mutex_destroy(&quitlock);
 	free(pool->threads);
 	free(pool);
 
@@ -162,6 +164,7 @@ static void *thread_do_work(void *vpool)
 	//check standby list
 		//standbylist is empty, execute task in queue.
 		pthread_mutex_lock(&pool->lock);
+//		printf("1 LOCK!!\n");
 		//check pool->queue
 		if(!isEmpty(&pool->queue)){
 			temp = *(pool->queue.data_start);
@@ -169,15 +172,30 @@ static void *thread_do_work(void *vpool)
 		}else{
 			//wait for condition reach signal to continue
 			while(pool->available==0){
+//				printf("waiting\n");
 				pthread_cond_wait(&pool->notify, &pool->lock);
+//				printf("signal received\n");
+				pthread_mutex_lock(&quitlock);
+				if(quit == 1){
+//					printf("unlocking!!~~~~~~\n");
+					pthread_mutex_unlock(&quitlock);
+					pthread_mutex_unlock(&pool->lock);
+					pthread_cond_signal(&pool->notify);
+					pthread_exit(NULL);
+					return(NULL);
+				}
+				pthread_mutex_unlock(&quitlock);
+
 			}
 			pthread_mutex_unlock(&pool->lock);
+
 			continue;
 		}
 		if(isEmpty(&pool->queue)){
 			pool->available = 0;
 		}
-		pthread_mutex_unlock(&pool->lock);    		
+		pthread_mutex_unlock(&pool->lock);
+    		
 	    (*(temp.function))((argu*)temp.argument);
     }
     pthread_exit(NULL);
@@ -227,17 +245,17 @@ void* checkPending(void* num_of_seats){
 		seat_t* curr = seat_header;
 		while(curr!=NULL){
 			pthread_mutex_lock(&curr->seat_lock);
-			// TODO: if curr->time !=-1,ignore the empty seats
+		
+
+			//  if curr->time !=-1,ignore the empty seats
 			if(curr->time_left != -1 && curr->state != OCCUPIED){
 				curr->time_left-=1;
-//				printf("time_left = %d\n",curr->time_left);
 				if(curr->time_left == 0){
 					//set it available
 	               	sem_wait(&g_thread_pool->sema);
                 if(!isEmpty(&g_thread_pool->standbylist)){
 
 					argu* temp = g_thread_pool->standbylist.data_start->argument;
-   	//.                printf("[cancelled] SET table :%d from %d to customer:%d \n",curr->id,curr->customer_id,temp->req.user_id);
                 	curr->customer_id = temp->req.user_id;
                 	curr->time_left = 5;
                 	delFromQueue(&g_thread_pool->standbylist);
@@ -250,9 +268,6 @@ void* checkPending(void* num_of_seats){
 					curr->time_left = -1;
 				}
 					sem_post(&g_thread_pool->sema);
-	             //    curr->state = AVAILABLE;
-		            // curr->customer_id = -1;
-		            // seat_available +=1;
 				}				
 			}
 			pthread_mutex_unlock(&curr->seat_lock);

@@ -1,0 +1,22 @@
+-------------------------------------------------thread num = 2------------------------------------------------
+TESTING SERVER
+Running Trace: /home/huaipei/Multi_Threaded_Server/testsuite/1.trace
+Total: 3750 Success: 3750 Fail: 0
+Average Response Time: 8.02538668315 ms
+Total Time = 1.48417401314 seconds
+Running Trace: /home/huaipei/Multi_Threaded_Server/testsuite/2.trace
+Incorrect Response: Correct=Seat unavailable	Yours=Confirm seat: 2 A ?
+Incorrect Response: Correct=Seat unavailable	Yours=Confirm seat: 6 A ?
+Incorrect Response: Correct=Seat request cancelled: 2 P	Yours=Permission denied - seat held by another user
+Incorrect Response: Correct=Seat confirmed: 3 P	Yours=Permission denied - seat held by another user
+ Incorrect Response: Correct=Permission denied - seat held by another user	Yours=Seat confirmed: 6 P
+Total: 27 Success: 22 Fail: 5
+Average Response Time: 3.48174571991 ms
+Total Time = 13.0462329388 seconds
+./run_testcase.sh: line 95:  5773 Terminated              ./${SERVER_BIN} > /dev/null
+Running Trace: /home/huaipei/Multi_Threaded_Server/testsuite/3.trace
+Total: 43400 Success: 43400 Fail: 0
+Average Response Time: 7.88599968506 ms
+Total Time = 18.1337549686 seconds
+./run_testcase.sh: line 95:  5822 Terminated              ./${SERVER_BIN} > /dev/null
+./run_testcase.sh: line 17:  5848 Terminated              ./${SERVER_BIN} > /dev/null

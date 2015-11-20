@@ -22,10 +22,13 @@ extern void* checkPending(void* num_of_seats);
 int listenfd;
 int num_seats = 20;
 struct pool_t* g_thread_pool;
-
+int num_req;
+double cumu_time;
 
 int main(int argc,char *argv[])
 {
+    num_req = 0;
+    cumu_time = 0;
     int flag = 20;
     int connfd = 0;
     struct sockaddr_in serv_addr;
@@ -88,24 +91,20 @@ int main(int argc,char *argv[])
     while(1)
     {
         connfd = accept(listenfd, (struct sockaddr*)NULL, NULL);
-
+        printf("connfd:%d\n",connfd);
         /*********************************************************************
             You should not need to modify any of the code above this comment.
             However, you will need to add lines to declare and initialize your 
             threadpool!
-            struct request{
-			    int seat_id;
-		    	int user_id;
-			    int customer_priority;
-			    char* resource;
-};
-
             The lines below will need to be modified! Some may need to be moved
             to other locations when you make your server multithreaded.
         *********************************************************************/
         argu* temp= (argu*)malloc(sizeof(argu));//struct     {connfd,&req};
         temp->connfd = connfd;
         temp->customer_priority = 1;
+
+        temp->start_time = clock();
+        num_req+=1;
         pool_add_task(g_thread_pool, (void*)&parse_request, (void*)temp);
     }
 }
@@ -115,11 +114,11 @@ void shutdown_server(int signo){
     
     //  Teardown your threadpool
     int err = pool_destroy(g_thread_pool);
-    if (!err){
+    if (err){
     	printf("Error !!! in pool destroy\n");
     }
-
     // TODO: Print stats about your ability to handle requests.
+    printf("Average response time: %f second \n", cumu_time/num_req);
     unload_seats();
     close(listenfd);
     exit(0);

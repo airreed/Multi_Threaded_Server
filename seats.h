@@ -19,7 +19,6 @@ typedef struct seat_struct
     seat_state_t state;
     struct seat_struct* next;
     pthread_mutex_t seat_lock;
-    //todo: add start time
     int time_left;
 
 } seat_t;

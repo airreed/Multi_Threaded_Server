@@ -4,16 +4,16 @@
 typedef struct pool_t pool_t;
 
 
-typedef struct pool{
+typedef struct pool {
     void (*function)(void *);
     void *argument;
 } pool_task_t;
 
-typedef struct circular_array{
-	pool_task_t* buf_start;
-	pool_task_t* buf_end;
-	pool_task_t* data_start;
-	pool_task_t* data_end;
+typedef struct circular_array {
+    pool_task_t* buf_start;
+    pool_task_t* buf_end;
+    pool_task_t* data_start;
+    pool_task_t* data_end;
 } c_queue;
 
 typedef struct m_sem_t {
@@ -23,15 +23,15 @@ typedef struct m_sem_t {
 } m_sem_t;
 
 struct pool_t {
-  pthread_mutex_t lock;
-  pthread_cond_t notify;
-  int available;
-  pthread_t *threads;
-  c_queue queue;
-  m_sem_t sema;
-  c_queue standbylist;
-  int thread_count;
-  int task_queue_size_limit;
+    pthread_mutex_t lock;
+    pthread_cond_t notify;
+    int available;
+    pthread_t *threads;
+    c_queue queue;
+    m_sem_t sema;
+    c_queue standbylist;
+    int thread_count;
+    int task_queue_size_limit;
 };
 
 

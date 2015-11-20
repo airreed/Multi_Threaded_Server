@@ -21,6 +21,9 @@ extern int pool_add_task(pool_t *pool, void (*function)(void *), void* argument)
 extern int standbylist_add_task(pool_t *pool, void (*function)(void *), void* argument);
 extern int sem_wait(m_sem_t *s);
 extern int sem_post(m_sem_t *s);
+extern int num_req;
+extern double cumu_time;
+
 #define BUFSIZE 1024
 
 int writenbytes(int,char *,int);
@@ -31,8 +34,8 @@ int parse_int_arg(char* filename, char* arg);
 
 void parse_request(argu* arguments)
 {
-	int connfd = arguments->connfd;
-	struct request* req = &arguments->req;
+    int connfd = arguments->connfd;
+    struct request* req = &arguments->req;
 
     char buf[BUFSIZE+1];
     char instr[20];
@@ -44,15 +47,14 @@ void parse_request(argu* arguments)
 
 
     char *bad_request = "HTTP/1.0 400 BAD REQUEST\r\n"\
-                              "Content-type: text/html\r\n\r\n"\
-                              "<html><body><h2>BAD REQUEST</h2>"\
-                              "</body></html>\n";
-    
+                        "Content-type: text/html\r\n\r\n"\
+                        "<html><body><h2>BAD REQUEST</h2>"\
+                        "</body></html>\n";
+
     get_line(connfd, buf, BUFSIZE);
-    
+
     //parse out instruction
-    while( !isspace(buf[j]) && (i < sizeof(instr) - 1))
-    {
+    while( !isspace(buf[j]) && (i < sizeof(instr) - 1)) {
         instr[i] = buf[i];
         i++;
         j++;
@@ -70,8 +72,7 @@ void parse_request(argu* arguments)
 
     //parse out filename
     i=0;
-    while (!isspace(buf[j]) && (i < sizeof(file) - 1))
-    {
+    while (!isspace(buf[j]) && (i < sizeof(file) - 1)) {
         file[i] = buf[j];
         i++;
         j++;
@@ -81,36 +82,33 @@ void parse_request(argu* arguments)
 
     //parse out type
     i=0;
-    while (!isspace(buf[j]) && (buf[j] != '\0') && (i < sizeof(type) - 1))
-    {
+    while (!isspace(buf[j]) && (buf[j] != '\0') && (i < sizeof(type) - 1)) {
         type[i] = buf[j];
         i++;
         j++;
     }
     type[i] = '\0';
 
-    while (get_line(connfd, buf, BUFSIZE) > 0)
-    {
+    while (get_line(connfd, buf, BUFSIZE) > 0) {
         //ignore headers -> (for now)
     }
 
     int length;
-    for(i = 0; i < strlen(file); i++)
-    {
+    for(i = 0; i < strlen(file); i++) {
         if(file[i] == '?')
             break;
     }
     length = i;
-    
+
     req->resource = malloc(length+1);
 
     if (length > strlen(file)) {
-      length = strlen(file);
+        length = strlen(file);
     }
 
     strncpy(req->resource, file, length);
     req->resource[length] = 0;
-    
+
     req->seat_id = parse_int_arg(file, "seat=");
     req->user_id = parse_int_arg(file, "user=");
     req->customer_priority = parse_int_arg(file, "priority=");
@@ -125,19 +123,19 @@ void parse_request(argu* arguments)
 //void process_request(int connfd, struct request* req)
 void process_request(argu* arguments)
 {
-	int connfd = arguments->connfd;
-	struct request* req = &arguments->req;
+    int connfd = arguments->connfd;
+    struct request* req = &arguments->req;
     char *ok_response = "HTTP/1.0 200 OK\r\n"\
-                           "Content-type: text/html\r\n\r\n";   
-    
+                        "Content-type: text/html\r\n\r\n";
+
     char *notok_response = "HTTP/1.0 404 FILE NOT FOUND\r\n"\
-                            "Content-type: text/html\r\n\r\n"\
-                            "<html><body bgColor=white text=black>\n"\
-                            "<h2>404 FILE NOT FOUND</h2>\n"\
-                            "</body></html>\n";
+                           "Content-type: text/html\r\n\r\n"\
+                           "<html><body bgColor=white text=black>\n"\
+                           "<h2>404 FILE NOT FOUND</h2>\n"\
+                           "</body></html>\n";
     int fd;
     char buf[BUFSIZE+1];
-    if (req->resource == NULL){
+    if (req->resource == NULL) {
         free(arguments);
         return;
     }
@@ -145,79 +143,66 @@ void process_request(argu* arguments)
     int addtoStandby=0;
 
     // Check if the request is for one of our operations
-    if (strncmp(req->resource, "list_seats", length) == 0)
-    {  
+    if (strncmp(req->resource, "list_seats", length) == 0) {
         list_seats(buf, BUFSIZE);
         // send headers
         writenbytes(connfd, ok_response, strlen(ok_response));
         // send data
         writenbytes(connfd, buf, strlen(buf));
-    } 
-    else if(strncmp(req->resource, "view_seat", length) == 0)
-    {
+    } else if(strncmp(req->resource, "view_seat", length) == 0) {
         addtoStandby = view_seat(buf, BUFSIZE, req->seat_id, req->user_id, req->customer_priority);
         writenbytes(connfd, ok_response, strlen(ok_response));
         // send data
-        writenbytes(connfd, buf, strlen(buf));                          
+        writenbytes(connfd, buf, strlen(buf));
 
-        if (addtoStandby ==1){
-        	// add to standby list
-            if(isFull(&g_thread_pool->standbylist)){
+        if (addtoStandby ==1) {
+            // add to standby list
+            if(isFull(&g_thread_pool->standbylist)) {
                 close(connfd);
                 free(req->resource);
                 free(arguments);
             }
 
 
-    	    argu* temp= (argu*)malloc(sizeof(argu));
+            argu* temp= (argu*)malloc(sizeof(argu));
 
-	        temp->connfd = connfd;
+            temp->connfd = connfd;
 
-	        temp->req = *req;
- //.           printf("============before add to standbylist\n");
-        	standbylist_add_task(g_thread_pool,(void*)&process_request, (void*) temp);
- //.           printf("standbylist: data_start:%p  data_end: %p\n",g_thread_pool->standbylist.data_start,g_thread_pool->standbylist.data_end);
- //.           printf("============after add to standbylist\n");
-         }
-        // send headers
-    } 
-    else if(strncmp(req->resource, "confirm", length) == 0)
-    {
+            temp->req = *req;
+            standbylist_add_task(g_thread_pool,(void*)&process_request, (void*) temp);
+        }
+    } else if(strncmp(req->resource, "confirm", length) == 0) {
         confirm_seat(buf, BUFSIZE, req->seat_id, req->user_id, req->customer_priority);
         // send headers
         writenbytes(connfd, ok_response, strlen(ok_response));
         // send data
         writenbytes(connfd, buf, strlen(buf));
-    }
-    else if(strncmp(req->resource, "cancel", length) == 0)
-    {
+    } else if(strncmp(req->resource, "cancel", length) == 0) {
         cancel(buf, BUFSIZE, req->seat_id, req->user_id, req->customer_priority);
         // send headers
         writenbytes(connfd, ok_response, strlen(ok_response));
         // send data
         writenbytes(connfd, buf, strlen(buf));
-    }
-    else
-    {
+    } else {
         // try to open the file
-        if ((fd = open(req->resource, O_RDONLY)) == -1)
-        {
+        if ((fd = open(req->resource, O_RDONLY)) == -1) {
             writenbytes(connfd, notok_response, strlen(notok_response));
-        } 
-        else
-        {
+        } else {
             // send headers
             writenbytes(connfd, ok_response, strlen(ok_response));
             // send file
             int ret;
             while ( (ret = read(fd, buf, BUFSIZE)) > 0) {
                 writenbytes(connfd, buf, ret);
-            }  
+            }
             // close file and free space
             close(fd);
-        } 
+        }
     }
-
+    // remember the time of the closed connfd
+    clock_t end_time= clock();
+    double time_spent = (double)(end_time - arguments->start_time)/CLOCKS_PER_SEC;
+    cumu_time = cumu_time + time_spent;
     close(connfd);
     free(req->resource);
     free(arguments);
@@ -229,32 +214,24 @@ int get_line(int fd, char *buf, int size)
     char c = '\0';
     int n;
 
-    while((i < size-1) && (c != '\n'))
-    {
+    while((i < size-1) && (c != '\n')) {
         n = readnbytes(fd, &c, 1);
-        if (n > 0)
-        {
-            if (c == '\r')
-            {
+        if (n > 0) {
+            if (c == '\r') {
                 n = readnbytes(fd, &c, 1);
 
-                if ((n > 0) && (c == '\n'))
-                {
+                if ((n > 0) && (c == '\n')) {
                     //this is an \r\n endline for request
                     //we want to then return the line
                     //readnbytes(fd, &c, 1);
                     continue;
-                } 
-                else 
-                {
+                } else {
                     c = '\n';
                 }
             }
             buf[i] = c;
             i++;
-        } 
-        else
-        {
+        } else {
             c = '\n';
         }
     }
@@ -269,11 +246,9 @@ int readnbytes(int fd,char *buf,int size)
     while ((rc = read(fd,buf+totalread,size-totalread)) > 0)
         totalread += rc;
 
-    if (rc < 0)
-    {
+    if (rc < 0) {
         return -1;
-    }
-    else
+    } else
         return totalread;
 }
 
@@ -296,30 +271,22 @@ int parse_int_arg(char* filename, char* arg)
     bool found_value_start = false;
     bool found_arg_list_start = false;
     int intarg = 0;
-    for(i=0; i < strlen(filename); i++)
-    {
-        if (!found_arg_list_start)
-        {
-            if (filename[i] == '?')
-            {
+    for(i=0; i < strlen(filename); i++) {
+        if (!found_arg_list_start) {
+            if (filename[i] == '?') {
                 found_arg_list_start = true;
             }
             continue;
         }
-        if (!found_value_start && strncmp(&filename[i], arg, strlen(arg)) == 0)
-        {
+        if (!found_value_start && strncmp(&filename[i], arg, strlen(arg)) == 0) {
             found_value_start = true;
             i += strlen(arg);
         }
-        if (found_value_start)
-        {
-            if(isdigit(filename[i]))
-            {
+        if (found_value_start) {
+            if(isdigit(filename[i])) {
                 intarg = intarg * 10 + (int) filename[i] - (int) '0';
                 continue;
-            } 
-            else
-            {
+            } else {
                 break;
             }
         }
