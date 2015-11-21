@@ -9,12 +9,10 @@ typedef struct pool {
     void *argument;
 } pool_task_t;
 
-typedef struct circular_array {
-    pool_task_t* buf_start;
-    pool_task_t* buf_end;
-    pool_task_t* data_start;
-    pool_task_t* data_end;
-} c_queue;
+typedef struct queue{
+    pool_task_t* queue;
+  int size;
+} priority_queue;
 
 typedef struct m_sem_t {
     int value;
@@ -27,9 +25,9 @@ struct pool_t {
     pthread_cond_t notify;
     int available;
     pthread_t *threads;
-    c_queue queue;
+    priority_queue queue;
+    priority_queue standbylist;
     m_sem_t sema;
-    c_queue standbylist;
     int thread_count;
     int task_queue_size_limit;
 };
@@ -40,9 +38,16 @@ void* checkPending(void* num_of_seats);
 int pool_add_task(pool_t *pool, void (*routine)(void *), void *arg);
 int standbylist_add_task(pool_t *pool, void (*function)(void *), void* argument);
 int pool_destroy(pool_t *pool);
-int addToQueue(c_queue *queue);
-int delFromQueue(c_queue *queue);
-void initQueue(c_queue* queue,int queue_size);
-int isEmpty(c_queue *queue);
-int isFull(c_queue *queue);
+// int addToQueue(c_queue *queue);
+// int delFromQueue(c_queue *queue);
+// void initQueue(c_queue* queue,int queue_size);
+// int isEmpty(c_queue *queue);
+// int isFull(c_queue *queue);
+int isEmpty(priority_queue*, int);
+int isFull(priority_queue*, int);
+int addToQueue(void (*function)(void *), void* argument, priority_queue* queue, int limit);
+pool_task_t popFromQueue(priority_queue*, int);
+void swap(int, int, priority_queue*, int);
+void percolateUp(int, priority_queue*, int);
+void percolateDown(int, priority_queue*, int);
 #endif

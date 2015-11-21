@@ -7,13 +7,14 @@
 #include "thread_pool.h"
 #include "util.h"
 
+#define STANDBY_SIZE 10
 
 extern struct pool_t* g_thread_pool;
 extern int sem_wait(m_sem_t *s);
 extern int sem_post(m_sem_t *s);
 extern struct pool_t* g_thread_pool;
-extern int delFromQueue(c_queue *queue);
-extern int addToQueue(c_queue *queue);
+extern pool_task_t popFromQueue(priority_queue*, int);
+extern int addToQueue(void (*function)(void *), void* argument, priority_queue* queue, int limit);
 seat_t* seat_header = NULL;
 
 char seat_state_to_char(seat_state_t);
@@ -121,12 +122,10 @@ void cancel(char* buf, int bufsize, int seat_id, int customer_id, int customer_p
                 //SET TIME of the seat to be default value -1
                 //check the the standbylist, if empty,set the seat is available. If not, give the seat to the the first person in the list.
                 sem_wait(&g_thread_pool->sema);
-                if(!isEmpty(&g_thread_pool->standbylist)) {
-
-                    argu* temp = g_thread_pool->standbylist.data_start->argument;
+                if(!isEmpty(&g_thread_pool->standbylist, STANDBY_SIZE)) {
+                    argu* temp = popFromQueue(&g_thread_pool->standbylist, STANDBY_SIZE).argument;
                     curr->customer_id = temp->req.user_id;
                     curr->time_left = 5;
-                    delFromQueue(&g_thread_pool->standbylist);
                 } else {
                     pthread_mutex_lock(&seat_flag_lock);
                     seat_available += 1;

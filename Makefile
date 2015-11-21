@@ -18,7 +18,7 @@
 ###############################################################################
 
 # handin info
-TEAM = `whoami`
+TEAM = hlv624+ywb017
 VERSION = `date +%Y%m%d%H%M%S`
 PROJ = http_server
 
@@ -47,7 +47,7 @@ test-reg: handin
 	cd testsuite;\
 	bash ./run_testcase.sh $${HANDIN};
 
-handin: cleanAll
+handin: cleanAll 
 	${TAR} ${TEAM}-${VERSION}-${PROJ}.tar ${DELIVERY}
 	${COMPRESS} ${TEAM}-${VERSION}-${PROJ}.tar
 

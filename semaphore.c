@@ -33,7 +33,6 @@ int sem_wait(m_sem_t *s)
 
 int sem_post(m_sem_t *s)
 {
-    //TODO
     pthread_mutex_lock(&s->guard);
     s->value = s->value + 1;
     pthread_cond_signal( &s->cond);
@@ -43,7 +42,7 @@ int sem_post(m_sem_t *s)
 
 void sem_destroy(m_sem_t *s){
 	if(pthread_mutex_destroy(&s->guard)){
-		printf("mutex Destroy error!\n");
+		printf(" mutex Destroy error!\n");
 		exit(2);
 	}
 

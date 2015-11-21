@@ -49,9 +49,15 @@ pool_t *pool_create(int queue_size, int num_threads)
 	pthread_mutex_init(&(resPool->lock), NULL);
 	pthread_cond_init (&(resPool->notify), NULL);
 	resPool->threads = (pthread_t*)malloc(sizeof(pthread_t)*num_threads);
-	initQueue(&resPool->queue,queue_size);
+	// initQueue(&resPool->queue,queue_size);
 	sem_init(&resPool->sema);
-	initQueue(&resPool->standbylist,STANDBY_SIZE);
+	// initQueue(&resPool->standbylist,STANDBY_SIZE);
+
+	resPool->queue.queue = (pool_task_t*)malloc(sizeof(pool_task_t) * queue_size);
+	resPool->queue.size = 0;
+	resPool->standbylist.queue= (pool_task_t*)malloc(sizeof(pool_task_t) * STANDBY_SIZE);
+	resPool->standbylist.size = 0;
+
 	resPool->thread_count = num_threads;  	//?
 	resPool->task_queue_size_limit = queue_size;  //?
 	int i;
@@ -60,12 +66,12 @@ pool_t *pool_create(int queue_size, int num_threads)
 	}
     return resPool;
 }
-void initQueue(c_queue* queue,int queue_size){
-	queue->buf_start = (pool_task_t*)malloc(sizeof(pool_task_t)*queue_size);
-	queue->buf_end = queue->buf_start + queue_size;
-	queue->data_start = queue->buf_start;
-	queue->data_end = queue->buf_start;
-}
+// void initQueue(c_queue* queue,int queue_size){
+// 	queue->buf_start = (pool_task_t*)malloc(sizeof(pool_task_t)*queue_size);
+// 	queue->buf_end = queue->buf_start + queue_size;
+// 	queue->data_start = queue->buf_start;
+// 	queue->data_end = queue->buf_start;
+// }
 
 void cleanupPending(){
 
@@ -78,14 +84,11 @@ int standbylist_add_task(pool_t *pool, void (*function)(void *), void* argument)
 {
 	sem_wait(&pool->sema);
 	int err = 0;
-	if(isFull(&pool->standbylist)){
+	if(isFull(&pool->standbylist, STANDBY_SIZE)){
 		sem_post(&pool->sema);
 		return err;
 	}
-	pool->standbylist.data_end-> function = function;
-	pool->standbylist.data_end-> argument = argument;	
-	c_queue* temp = &pool->standbylist;
-	err = addToQueue(temp);
+	err = addToQueue(function, argument, &pool->standbylist, STANDBY_SIZE);
 	sem_post(&pool->sema);
 	return err;
 }
@@ -100,19 +103,16 @@ int pool_add_task(pool_t *pool, void (*function)(void *), void* argument)
 	pthread_mutex_lock(&pool->lock);
 
 	int notify = 0;
-	if(isEmpty(&pool->queue)){		
+	if(isEmpty(&pool->queue, pool->task_queue_size_limit)){		
 		notify = 1;
 	}
 	int err = 0;
-	if(isFull(&pool->queue)){
+	if(isFull(&pool->queue, pool->task_queue_size_limit)){
 		err = 1;
 		pthread_mutex_unlock(&pool->lock);
 		return err;
 	}
-	pool->queue.data_end-> function = function;
-	pool->queue.data_end-> argument = argument;
-	c_queue* temp = &pool->queue;
-	err = addToQueue(temp);
+	err = addToQueue(function, argument, &pool->queue, pool->task_queue_size_limit);
 	if(notify==1){
 		pool->available = 1;
 		pthread_cond_signal(&pool->notify);
@@ -132,7 +132,7 @@ int pool_destroy(pool_t *pool)
 
     int err = 0;
 	pthread_cond_broadcast(&pool->notify);
-//	sleep(1);
+	sleep(1);
 
 	if(pthread_mutex_destroy(&pool->lock)){
 		printf(" mutex Destroy error!\n");
@@ -164,20 +164,14 @@ static void *thread_do_work(void *vpool)
 	//check standby list
 		//standbylist is empty, execute task in queue.
 		pthread_mutex_lock(&pool->lock);
-//		printf("1 LOCK!!\n");
-		//check pool->queue
-		if(!isEmpty(&pool->queue)){
-			temp = *(pool->queue.data_start);
-			delFromQueue(&pool->queue);
+		if(!isEmpty(&pool->queue, pool->task_queue_size_limit)){
+			temp = popFromQueue(&pool->queue, pool->task_queue_size_limit);
 		}else{
 			//wait for condition reach signal to continue
 			while(pool->available==0){
-//				printf("waiting\n");
 				pthread_cond_wait(&pool->notify, &pool->lock);
-//				printf("signal received\n");
 				pthread_mutex_lock(&quitlock);
 				if(quit == 1){
-//					printf("unlocking!!~~~~~~\n");
 					pthread_mutex_unlock(&quitlock);
 					pthread_mutex_unlock(&pool->lock);
 					pthread_cond_signal(&pool->notify);
@@ -191,7 +185,7 @@ static void *thread_do_work(void *vpool)
 
 			continue;
 		}
-		if(isEmpty(&pool->queue)){
+		if(isEmpty(&pool->queue, pool->task_queue_size_limit)){
 			pool->available = 0;
 		}
 		pthread_mutex_unlock(&pool->lock);
@@ -201,42 +195,82 @@ static void *thread_do_work(void *vpool)
     pthread_exit(NULL);
     return(NULL);
 }
-int isEmpty(c_queue *queue){
-	if(queue->data_start == queue->data_end){
-		return 1;
-	}
-	return 0;
-}
-int isFull(c_queue *queue){
-	if(queue->data_end + 1 == queue->data_start){
-		return 1;
-	}
-	if(queue->data_end == queue->buf_end && queue->data_start == queue->buf_start){
-		return 1;
-	}
-	return 0;
 
-}
-int addToQueue(c_queue *queue){
-	int err = 0;
-	//move pointer
-	if(queue->data_end == queue->buf_end){
-		queue->data_end = queue->buf_start;
-	}else{
-		queue->data_end = queue->data_end + 1;
-	}
-	return err;	
-}
-int delFromQueue(c_queue *queue){
-	int err = 0;
-	if(queue->data_start == queue->buf_end){
-		queue->data_start = queue->buf_start;
-	}else{
-		queue->data_start = queue->data_start + 1;
-	}
-	return err;	
+
+int isEmpty(priority_queue* queue, int limit){
+	if(queue->size == 0)return 1;
+	else return 0;
 }
 
+int isFull(priority_queue* queue, int limit){
+	if(queue->size == limit) return 1;
+	else return 0;
+}
+
+int addToQueue(void (*function)(void *), void* argument, priority_queue* queue, int limit){
+	int err = 0;
+	if(isFull(queue, limit)){
+		return err;
+	}else{
+		queue->queue[queue->size].function = function;
+		queue->queue[queue->size].argument = argument;
+		queue->size = queue->size + 1;
+		percolateUp(queue->size - 1, queue, limit);
+		return err;	
+	}
+}
+
+pool_task_t popFromQueue(priority_queue* queue, int limit){
+
+	pool_task_t task = queue->queue[0];
+	swap(0, queue->size - 1, queue, limit);
+	percolateDown(0, queue, limit);
+	queue->size = queue->size - 1;
+	return task;	
+}
+
+void swap(int i, int j, priority_queue* queue, int limit) {
+	pool_task_t temp = queue->queue[i];
+	queue->queue[i] = queue->queue[j];
+	queue->queue[j] = temp;
+}
+
+void percolateUp(int i, priority_queue* queue, int limit) {
+	while (i >=0) {
+		argu* iargu =  queue->queue[i].argument;
+		argu* parentargu =  queue->queue[(i - 1) / 2].argument;
+		if (iargu->customer_priority < parentargu->customer_priority) {
+			swap(i, (i - 1) / 2, queue, limit);
+			i = (i - 1) / 2;
+		}
+		else {
+			break;
+		}
+	}
+}
+
+void percolateDown(int i, priority_queue* queue, int limit) {
+	int left = 2 * i + 1;
+	int right = 2 * i + 2;
+	while (left < queue->size) {
+		int smaller = left;
+		argu* rightargu =  queue->queue[right].argument;
+		argu* leftargu =  queue->queue[left].argument;
+		argu* iargu =  queue->queue[i].argument;
+		if (right < queue->size && rightargu->customer_priority < leftargu->customer_priority) {
+			smaller = right;
+		}
+		argu* smallerargu =  queue->queue[smaller].argument;
+		if (iargu->customer_priority > smallerargu->customer_priority) {
+			swap(i, smaller, queue, limit);
+			i = smaller;
+		} else {
+			break;
+		}
+		left = 2 * i + 1;
+		right = 2 * i + 2;
+	}
+}
 void* checkPending(void* num_of_seats){
 	while(1){
 		//check if the all seats empty
@@ -253,12 +287,11 @@ void* checkPending(void* num_of_seats){
 				if(curr->time_left == 0){
 					//set it available
 	               	sem_wait(&g_thread_pool->sema);
-                if(!isEmpty(&g_thread_pool->standbylist)){
+                if(!isEmpty(&g_thread_pool->standbylist, STANDBY_SIZE)){
 
-					argu* temp = g_thread_pool->standbylist.data_start->argument;
+					argu* temp = popFromQueue(&g_thread_pool->standbylist, STANDBY_SIZE).argument;
                 	curr->customer_id = temp->req.user_id;
                 	curr->time_left = 5;
-                	delFromQueue(&g_thread_pool->standbylist);
                 }else{
 					pthread_mutex_lock(&seat_flag_lock);
 					seat_available += 1;
@@ -277,4 +310,44 @@ void* checkPending(void* num_of_seats){
 	}
 	pthread_exit(NULL);
 }
+
+
+
+
+// int isEmpty(c_queue *queue){
+// 	if(queue->data_start == queue->data_end){
+// 		return 1;
+// 	}
+// 	return 0;
+// }
+// int isFull(c_queue *queue){
+// 	if(queue->data_end + 1 == queue->data_start){
+// 		return 1;
+// 	}
+// 	if(queue->data_end == queue->buf_end && queue->data_start == queue->buf_start){
+// 		return 1;
+// 	}
+// 	return 0;
+
+// }
+// int addToQueue(c_queue *queue){
+// 	int err = 0;
+// 	//move pointer
+// 	if(queue->data_end == queue->buf_end){
+// 		queue->data_end = queue->buf_start;
+// 	}else{
+// 		queue->data_end = queue->data_end + 1;
+// 	}
+// 	return err;	
+// }
+// int delFromQueue(c_queue *queue){
+// 	int err = 0;
+// 	if(queue->data_start == queue->buf_end){
+// 		queue->data_start = queue->buf_start;
+// 	}else{
+// 		queue->data_start = queue->data_start + 1;
+// 	}
+// 	return err;	
+// }
+
 

@@ -91,7 +91,7 @@ int main(int argc,char *argv[])
     while(1)
     {
         connfd = accept(listenfd, (struct sockaddr*)NULL, NULL);
-        printf("connfd:%d\n",connfd);
+        // printf("connfd:%d\n",connfd);
         /*********************************************************************
             You should not need to modify any of the code above this comment.
             However, you will need to add lines to declare and initialize your 
@@ -101,8 +101,9 @@ int main(int argc,char *argv[])
         *********************************************************************/
         argu* temp= (argu*)malloc(sizeof(argu));//struct     {connfd,&req};
         temp->connfd = connfd;
-        temp->customer_priority = 1;
-
+        //set default priority to 0
+        temp->customer_priority = 0;
+        //remember the arrived time of a request
         temp->start_time = clock();
         num_req+=1;
         pool_add_task(g_thread_pool, (void*)&parse_request, (void*)temp);

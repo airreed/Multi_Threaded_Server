@@ -25,6 +25,7 @@ extern int num_req;
 extern double cumu_time;
 
 #define BUFSIZE 1024
+#define STANDBY_SIZE 10
 
 int writenbytes(int,char *,int);
 int readnbytes(int,char *,int);
@@ -157,7 +158,7 @@ void process_request(argu* arguments)
 
         if (addtoStandby ==1) {
             // add to standby list
-            if(isFull(&g_thread_pool->standbylist)) {
+            if(isFull(&g_thread_pool->standbylist, STANDBY_SIZE)) {
                 close(connfd);
                 free(req->resource);
                 free(arguments);
@@ -199,7 +200,7 @@ void process_request(argu* arguments)
             close(fd);
         }
     }
-    // remember the time of the closed connfd
+    // remember the time of the closed connfd, compute the average time.
     clock_t end_time= clock();
     double time_spent = (double)(end_time - arguments->start_time)/CLOCKS_PER_SEC;
     cumu_time = cumu_time + time_spent;
